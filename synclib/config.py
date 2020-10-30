@@ -55,8 +55,7 @@ class CFG:
             key (str): key to be used to select value
             value (many): value to be set for given key in config
         """
-        self.config[key] = value
-        self.save()
+        self._config[key] = value
 
     def save(self) -> None:
         """Save current config to file,

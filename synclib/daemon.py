@@ -54,7 +54,7 @@ class Daemon:
         """
         return self._repeat
 
-    @repeat.setter
+    @repeatCount.setter
     def repeatCount(self, value):
         """This method is a setter for _repeat attr
 
