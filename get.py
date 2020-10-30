@@ -1,4 +1,5 @@
-from encryption import EncryptionKey, encrypt, decrypt
+from synclib.encryption import EncryptionKey, encrypt, decrypt
+import json
 
 
 def getFile(env: dict, response: callable, config: dict):
@@ -12,9 +13,16 @@ def getFile(env: dict, response: callable, config: dict):
     return [output]
 
 
-def handleRequest(env: dict, response: callable, config: dict):
-    if env["PATH_INFO"] == "/getFile":
-        return getFile(env, response, config)
-    else:
-        response("404", [("Content-Type", "application/octet-stream")])
-        return [b""]
+def connect(env: dict, response: callable, config: dict):
+    response("200", [("Content-Type", "text/html")])
+    data = {
+        "success": True,
+        "allow_edit": config["allow_edit"],
+    }
+    data = json.dumps(data).encode("utf-8")
+    if config["encode"]:
+        data = b"".join(encrypt(data, config["encode_key"]))
+    return [data]
+
+
+URLS = {"/getFile": getFile, "/connect": connect}

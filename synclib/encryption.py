@@ -114,7 +114,7 @@ def encrypt(data: bytes, key: str) -> bytes:
         # for each byte in data and each byte in key
         # modulo forces output byte to be in range 0-255
         yield int.to_bytes((byte + delta) % 256, 1, "big")
-    raise StopIteration
+    return
 
 
 def decrypt(data: bytes, key: str) -> bytes:
@@ -132,7 +132,7 @@ def decrypt(data: bytes, key: str) -> bytes:
     for byte, delta in zip(data, key):
         # modulo forces output byte to be in range 0-255
         yield int.to_bytes((byte - delta) % 256, 1, "big")
-    raise StopIteration
+    return
 
 
 if __name__ == "__main__":

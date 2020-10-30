@@ -38,9 +38,19 @@ def main(env: dict, response: callable):
     cfg = config.ServerCFG("./server.cfg")
     try:
         if env["REQUEST_METHOD"] == "GET":
-            return get.handleRequest(env, response, cfg)
+            return get.URLS.get(
+                env["PATH_INFO"],
+                lambda env, response, cfg: b""
+                if [response("200", [("Content-Type", "text/html")])]
+                else None,
+            )(env, response, cfg)
         elif env["REQUEST_METHOD"] == "PUT":
-            return put.handleRequest(env, response, cfg)
+            return put.URLS.get(
+                env["PATH_INFO"],
+                lambda env, response, cfg: b""
+                if [response("200", [("Content-Type", "text/html")])]
+                else None,
+            )(env, response, cfg)
         else:
             response("404", [("Content-Type", "text/html")])
             return [b""]

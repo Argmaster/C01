@@ -10,13 +10,16 @@ import synclib.config as config
 from synclib.daemon import Daemon
 
 
-@Daemon(delay=0.5, process=True)
-def pullFile(cfg):
-    fileData = requests.get(f"http://{cfg['address']}:{cfg['port']}/getFile").content
+@Daemon(delay=0.5)
+def pullFile(var, setup):
+    fileData = requests.get(
+        f"http://{setup['address']}{':'+setup['port'] if setup['port'] else ''}/getFile"
+    ).content
+    var.set(var.get() + len(fileData))
     # throws requests.exceptions.ConnectionError !!!
-    if cfg["encode"]:
-        fileData = b"".join(decrypt(fileData, cfg["encode_key"]))
-    with open(cfg["target"], "wb") as file:
+    if setup["encode"]:
+        fileData = b"".join(decrypt(fileData, setup["encode_key"]))
+    with open(setup["target"], "wb") as file:
         file.write(fileData)
 
 
@@ -46,42 +49,89 @@ class FatalResponseCode(Exception):
         self.code = code
 
 
+class UnwantedConnectionError(Exception):
+    pass
+
+
 class ConnectionWindow(tk.Toplevel, Widget):
 
     entryWidgets: dict = None
     setup: dict = None
     innerFrame: tk.Frame = None
+    uploadedData = None
+    performPulling = False
+    labelWidgets = None
 
     def __init__(self, master: tk.Widget, setup: dict):
         super().__init__(master)
+        self.downloadedData = tk.IntVar(value=0)
+        print(f"{self.downloadedData.get(): >8.4f} {id(self)}")
+        self.downloadedData.trace("w", self.updateDownloadLabel)
+        self._downloadTextVar = tk.StringVar()
+        self.uploadedData = tk.IntVar(value=0)
         self.setup = setup
         self.innerFrame = wFrame(self)
         self.innerFrame.pack(pady=10, padx=10)
         self.attributes("-topmost", True)
         self.geometry(f"+{self.master.master.winfo_x()}+{self.master.master.winfo_y()}")
         self.title("Connection")
-        tuple(
-            map(
-                lambda w: w.configure(state="disabled"),
-                self.master.entryWidgets.values(),
-            )
-        )
+        for _ in map(
+            lambda w: w.configure(state="disabled"),
+            self.master.entryWidgets.values(),
+        ):
+            pass
+        self._insertWidgets()
+        self._insertBindings()
         if not self.__init_connection__():
             self.destroy()
+            self = None
             return None
-        self._insertWidgets()
+
+    def getData(self, url: str):
+        """Send get request to server defined
+        by setup provided to constructor
+
+        Args:
+            url (str): url path to resource
+
+        Raises:
+            FatalResponseCode: If status code of request
+                                is not equal 200
+
+        Returns:
+            bytes: bytes of response content
+        """
+        response = requests.get(
+            f"http://{self.setup['address']}{':'+self.setup['port'] if self.setup['port'] else ''}{url}"
+        )
+        if response.status_code != 200:
+            raise FatalResponseCode(response.status_code)
+        response = response.content
+        self.downloadedData.set(self.downloadedData.get() + len(response))
+        return response
 
     def __init_connection__(self):
+        """Initial test of connection with server
+        provided in setup, just asks for some fixed
+        header and tests if it can be decoded and
+        it there are any connection issues
+
+        Returns:
+            bool: True if was succesfull, False otherwise
+        """
         try:
-            response = requests.get(
-                f"http://{self.setup['address']}:{self.setup['port']}/pullConfig"
-            )
-            if response.status_code != 200:
-                raise FatalResponseCode(response.status_code)
-            else:
-                data = response.content
-                return True
-        except json.JSONDecodeError:
+            response = self.getData("/connect")
+            if self.setup["encode"]:
+                response = json.loads(
+                    b"".join(decrypt(response, self.setup["encode_key"])).decode(
+                        "utf-8"
+                    )
+                )
+                if not response["success"]:
+                    raise UnwantedConnectionError()
+                self.master.config["allow_edit"] = response["allow_edit"]
+            return True
+        except (json.JSONDecodeError, UnicodeDecodeError):
             tkmsb.showerror(
                 "Error",
                 "Parsing server response failed, porobably invalid decryption key was provided.",
@@ -99,13 +149,26 @@ class ConnectionWindow(tk.Toplevel, Widget):
                 f"Server responded with not positive response code: {e.code}",
             )
             return False
+        except UnwantedConnectionError:
+            tkmsb.showerror(
+                "Error",
+                f"Server is not likely to talk with us :C",
+            )
+            return False
+
+    def updateDownloadLabel(self, *args, **kwargs):
+        self._downloadTextVar.set(f"Pulled: {self.downloadedData.get()/(1024.0): >8.2f} KiB")
+
+
+    def _insertBindings(self):
+        self.protocol("WM_DELETE_WINDOW", self.endConnection)
 
     def _insertWidgets(self):
         self.labelWidgets = {
             "ip_info": self.innerFrame.gridIn(
                 tk.Label,
                 {
-                    "text": f"Server: {self.setup['address']}:{self.setup['port']}",
+                    "text": f"Server: {self.setup['address']}{':'+self.setup['port'] if self.setup['port'] else ''}",
                     "width": 25,
                 },
                 {
@@ -125,7 +188,7 @@ class ConnectionWindow(tk.Toplevel, Widget):
             ),
             "data_info": self.innerFrame.gridIn(
                 tk.Label,
-                {"text": f"Pulled: 0 KiB", "width": 25},
+                {"width": 25, "textvariable": self._downloadTextVar},
                 {
                     "row": 2,
                     "column": 1,
@@ -142,7 +205,7 @@ class ConnectionWindow(tk.Toplevel, Widget):
             "stopPulling": self.innerFrame.gridIn(
                 tk.Button,
                 {
-                    "text": "Start Pulling",
+                    "text": "Stop Pulling",
                     "command": self.stopPulling,
                     "width": 15,
                     "state": "disabled",
@@ -155,37 +218,44 @@ class ConnectionWindow(tk.Toplevel, Widget):
                 {"row": 2, "column": 0},
             ),
         }
+        self.updateDownloadLabel()
 
     def startPulling(self, *args):
+        self.performPulling = True
         self.entryWidgets["startPulling"]["state"] = "disabled"
         self.entryWidgets["stopPulling"]["state"] = "normal"
-        pass
+        pullFile(self.downloadedData, self.master.config)
 
     def stopPulling(self, *args):
+        self.performPulling = False
         self.entryWidgets["startPulling"]["state"] = "normal"
         self.entryWidgets["stopPulling"]["state"] = "disabled"
-        pass
+        pullFile.kill()
 
     def endConnection(self, *args):
-        self.entryWidgets["startPulling"]["state"] = "disabled"
-        self.entryWidgets["stopPulling"]["state"] = "disabled"
-        self.entryWidgets["endConnection"]["state"] = "disabled"
-        self.stopPulling()
+        if self.performPulling:
+            if not tkmsb.askyesno("Alert", "Do you want to close connection?"):
+                return None
+            self.entryWidgets["startPulling"]["state"] = "disabled"
+            self.entryWidgets["stopPulling"]["state"] = "disabled"
+            self.entryWidgets["endConnection"]["state"] = "disabled"
+            self.stopPulling()
         self.destroy()
 
     def destroy(self):
         self.master.connectionSubWindow = None
-        tuple(
-            map(
-                lambda w: w.configure(state="normal"),
-                self.master.entryWidgets.values(),
-            )
-        )
+        self.master.hasActiveConnection = False
+        for _ in map(
+            lambda w: w.configure(state="normal"),
+            self.master.entryWidgets.values(),
+        ):
+            pass
         return super().destroy()
 
 
 class Window(tk.Frame, Widget):
 
+    hasActiveConnection = False
     connectionSubWindow = None
     entryWidgets = None
     labelWidgets = None
@@ -198,6 +268,7 @@ class Window(tk.Frame, Widget):
         ttk.Style().configure("pad.TCheckbutton", padding=7, width=40, height=40)
         # set title
         self.master.title("Code exchange client")
+        self.master.attributes("-topmost", True)
         # pack self into the master widget
         self.pack(pady=10, padx=10)
         # load configuration of app
@@ -393,7 +464,7 @@ class Window(tk.Frame, Widget):
         setup["encode"] = self.tkVariables[2].get()
         setup["address"] = self.tkVariables[3].get()
         setup["port"] = self.tkVariables[4].get()
-        if self.connectionSubWindow is None:
+        if not self.hasActiveConnection:
             self.connectionSubWindow = ConnectionWindow(self, setup)
         else:
             tkmsb.showwarning(

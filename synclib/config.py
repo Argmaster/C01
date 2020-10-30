@@ -84,6 +84,6 @@ class ClientCFG(CFG):
         "encode_key": "",
         "encode": True,
         "allow_edit": False,
-        "address": "192.168.1.181",
+        "address": "",
         "port": "8080",
     }
