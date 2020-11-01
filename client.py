@@ -58,33 +58,50 @@ class ConnectionWindow(tk.Toplevel, Widget):
     entryWidgets: dict = None
     setup: dict = None
     innerFrame: tk.Frame = None
-    uploadedData = None
     performPulling = False
     labelWidgets = None
+    uploadedDataVar = None
+    downloadedDataVar = None
+    downloadLabelVar = None
+    pollingRateVar = None
 
     def __init__(self, master: tk.Widget, setup: dict):
+        """Connection top level window with polling control
+
+        Args:
+            master (tk.Widget): parent (master) widget
+            setup (dict): dictionay containing configuration
+        """
         super().__init__(master)
-        self.downloadedData = tk.IntVar(value=0)
-        print(f"{self.downloadedData.get(): >8.4f} {id(self)}")
-        self.downloadedData.trace("w", self.updateDownloadLabel)
-        self._downloadTextVar = tk.StringVar()
-        self.uploadedData = tk.IntVar(value=0)
+        # set configuration variables
+        self.pollingRateVar = tk.IntVar(value=500)
+        self.uploadedDataVar = tk.IntVar(value=0)
+        self.downloadedDataVar = tk.IntVar(value=0)
+        self.downloadLabelVar = tk.StringVar()
+        # add tracebacks to them
+        self.downloadedDataVar.trace("w", self.updateDownloadLabel)
+        self.pollingRateVar.trace("w", self.updatePollingRate)
+        # clone reference to setup
         self.setup = setup
+        # set main widget of this window
         self.innerFrame = wFrame(self)
         self.innerFrame.pack(pady=10, padx=10)
+        # window setup behavior
         self.attributes("-topmost", True)
         self.geometry(f"+{self.master.master.winfo_x()}+{self.master.master.winfo_y()}")
         self.title("Connection")
+        # disable all entries in parent window
         for _ in map(
             lambda w: w.configure(state="disabled"),
             self.master.entryWidgets.values(),
         ):
             pass
+        # add widgets of this window
         self._insertWidgets()
         self._insertBindings()
+        # initialize connection
         if not self.__init_connection__():
             self.destroy()
-            self = None
             return None
 
     def getData(self, url: str):
@@ -107,7 +124,7 @@ class ConnectionWindow(tk.Toplevel, Widget):
         if response.status_code != 200:
             raise FatalResponseCode(response.status_code)
         response = response.content
-        self.downloadedData.set(self.downloadedData.get() + len(response))
+        self.downloadedDataVar.set(self.downloadedDataVar.get() + len(response))
         return response
 
     def __init_connection__(self):
@@ -157,8 +174,19 @@ class ConnectionWindow(tk.Toplevel, Widget):
             return False
 
     def updateDownloadLabel(self, *args, **kwargs):
-        self._downloadTextVar.set(f"Pulled: {self.downloadedData.get()/(1024.0): >8.2f} KiB")
+        val = self.downloadedDataVar.get()
+        if val < 1024:
+            val = f"Pulled: {val} B"
+        elif val < 1048576:
+            val = f"Pulled: {val/1024:.2f} KiB"
+        elif val < 1073741824:
+            val = f"Pulled: {val/1048576:.2f} MiB"
+        else:
+            val = f"Pulled: {val/1099511627776:.2f} GiB"
+        self.downloadLabelVar.set(val)
 
+    def updatePollingRate(self, *args):
+        pullFile.delay = self.pollingRateVar.get() / 1000
 
     def _insertBindings(self):
         self.protocol("WM_DELETE_WINDOW", self.endConnection)
@@ -188,10 +216,19 @@ class ConnectionWindow(tk.Toplevel, Widget):
             ),
             "data_info": self.innerFrame.gridIn(
                 tk.Label,
-                {"width": 25, "textvariable": self._downloadTextVar},
+                {"width": 25, "textvariable": self.downloadLabelVar},
                 {
                     "row": 2,
                     "column": 1,
+                    "sticky": "s",
+                },
+            ),
+            "polling_rate": self.innerFrame.gridIn(
+                tk.Label,
+                {"width": 25, "text": "Polling Interval (ms)"},
+                {
+                    "row": 3,
+                    "column": 0,
                     "sticky": "s",
                 },
             ),
@@ -217,22 +254,36 @@ class ConnectionWindow(tk.Toplevel, Widget):
                 {"text": "End Connection", "command": self.endConnection, "width": 15},
                 {"row": 2, "column": 0},
             ),
+            "polling_rate": self.innerFrame.gridIn(
+                tk.Scale,
+                {
+                    "orient": tk.HORIZONTAL,
+                    "length": 200,
+                    "from": 100,
+                    "to": 5000,
+                    "variable": self.pollingRateVar,
+                },
+                {"row": 3, "column": 1},
+            ),
         }
         self.updateDownloadLabel()
 
     def startPulling(self, *args):
+        """Initializes pullFile daemon, sets performPulling flag to true"""
         self.performPulling = True
         self.entryWidgets["startPulling"]["state"] = "disabled"
         self.entryWidgets["stopPulling"]["state"] = "normal"
-        pullFile(self.downloadedData, self.master.config)
+        pullFile(self.downloadedDataVar, self.master.config)
 
     def stopPulling(self, *args):
+        """Terminates pullFile daemon, sets performPulling flag to false"""
         self.performPulling = False
         self.entryWidgets["startPulling"]["state"] = "normal"
         self.entryWidgets["stopPulling"]["state"] = "disabled"
         pullFile.kill()
 
     def endConnection(self, *args):
+        """Kills pulling daemon and destroys the connection windows"""
         if self.performPulling:
             if not tkmsb.askyesno("Alert", "Do you want to close connection?"):
                 return None
@@ -243,13 +294,17 @@ class ConnectionWindow(tk.Toplevel, Widget):
         self.destroy()
 
     def destroy(self):
+        """Destroy this window and activate entries in main window"""
         self.master.connectionSubWindow = None
         self.master.hasActiveConnection = False
+        # while connection window is created, enties
+        # in main window are made disabled, reverse it here
         for _ in map(
             lambda w: w.configure(state="normal"),
             self.master.entryWidgets.values(),
         ):
             pass
+        # call parent method to keep the default functionality
         return super().destroy()
 
 
