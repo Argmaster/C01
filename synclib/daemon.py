@@ -3,6 +3,7 @@ from threading import Thread, Event
 import sys
 import time
 import logging
+from typing import Callable, Tuple, Union
 
 
 class DaemonLeaveException(Exception):
@@ -12,12 +13,12 @@ class DaemonLeaveException(Exception):
 class Daemon:
     def __init__(
         self,
-        task: callable = None,
+        task: Callable = None,
         *,
         delay: float = 1.0,
         repeat: int = -1,
-        tasks: tuple(callable) = None,
-        callbacks: tuple(callable) = None,
+        tasks: Tuple[Callable] = None,
+        callbacks: Tuple[Callable] = None,
     ):
         """Daemon class which can be used as a descriptor both as a class and as intance
         to simply create thread daemon function(s) to be executed in single or multiple
@@ -36,7 +37,7 @@ class Daemon:
         self._callbacks = []
         self._thread = None
         self._dieFlag = Event()
-        self._tasks.append(func) if callable(func) else None
+        #self._tasks.append(func) if callable(func) else None
         self._tasks.append(tasks) if isinstance(tasks, (tuple, list)) else None
         self._callbacks.append(callbacks) if isinstance(callbacks, (tuple, list)) else None
 
@@ -119,7 +120,7 @@ class Daemon:
         else:
             raise RuntimeError("Thread cannot be overwriten")
 
-    def __iadd__(self, other: (callable or Daemon)):
+    def __iadd__(self, other: Union[Callable, "Daemon"]):
         """Add callable to tasks or extend tasks by
         tasks from another Daemon
 
@@ -144,7 +145,7 @@ class Daemon:
         else:
             self._delay = value
 
-    def addCallback(self, func: callable):
+    def addCallback(self, func: Callable):
         """Insert callback into callback list,
         it will be called after task loop finishes,
         but only if no unexpected exception will ocure
@@ -156,7 +157,7 @@ class Daemon:
         """
         self._callbacks.append(func)
 
-    def addTask(self, func: callable):
+    def addTask(self, func: Callable):
         """Insert task into task list, it will be
         called periodically every <delay> seconds
 

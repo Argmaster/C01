@@ -2,6 +2,7 @@
 #%%
 from random import randint
 import math
+from typing import Union
 
 
 class EncryptionKey:
@@ -10,7 +11,7 @@ class EncryptionKey:
     through encoding key
     """
 
-    def __init__(self, key: (str, bytes), encoding="utf-8") -> None:
+    def __init__(self, key: Union[str, bytes], encoding="utf-8") -> None:
         """Constructor sets self.key_index to 0
         and self.raw_key to given key str
 
@@ -36,7 +37,7 @@ class EncryptionKey:
             # append to encoding key
             self.enc_key += int.to_bytes(value, 1, "big")
 
-    def __iter__(self) -> "self":
+    def __iter__(self) -> "EncryptionKey":
         """EncryptionKey class is an iterator by itself
 
         Returns:

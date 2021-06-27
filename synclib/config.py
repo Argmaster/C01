@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Any
 
 
 class CFG:
@@ -35,7 +36,7 @@ class CFG:
             # and default config is being saved to file
             self.save()
 
-    def __getitem__(self, key: str) -> "many":
+    def __getitem__(self, key: str) -> Any:
         """Get item magic method, provides
         instance[key] sequence indexing
         syntax sugar
@@ -48,7 +49,7 @@ class CFG:
         """
         return self._config.get(key, self.DEFAULT_CONFIG[key])
 
-    def __setitem__(self, key: str, value: "many") -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         """Set config value and save whole config to file
 
         Args:
